@@ -32,7 +32,17 @@ Ejemplos de `DATABASE_URL`:
 - PostgreSQL: `postgresql://usuario:clave@host:5432/basedatos`
 - MySQL / MariaDB: `mysql+pymysql://usuario:clave@host:3306/basedatos`
 
-Las tablas se crean automáticamente al iniciar.
+En PostgreSQL la app usa el driver `psycopg2` automáticamente (normaliza
+`postgresql://` a `postgresql+psycopg2://`), así que funciona con el formato de
+URL que entrega Neon o Vercel sin tocar nada. También está instalado `psycopg`
+(v3) por si prefieres usar ese driver.
+
+Si la base de datos no abre al arrancar, los logs de Vercel muestran un mensaje
+claro con el motivo (URL inválida, base inaccesible, credenciales incorrectas)
+en vez de un error 500 genérico.
+
+Las tablas se crean automáticamente al iniciar. Si la base ya existía con un
+esquema anterior, se agregan automáticamente las columnas faltantes.
 
 ## Despliegue en Vercel
 1. Sube este proyecto a un repositorio de GitHub (o usa `vercel` desde la carpeta).

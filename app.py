@@ -64,6 +64,10 @@ if uri.startswith("postgres://"):  # Heroku / Render antiguos
     uri = uri.replace("postgres://", "postgresql://", 1)
 # channel_binding=require (que Neon agrega a veces) rompe psycopg2: se quita.
 uri = re.sub(r"([?&])channel_binding=[^&]*&?", r"\1", uri).rstrip("?&")
+# SQLAlchemy 2.x usa el driver psycopg (v3) para postgresql:// ; si solo esta
+# psycopg2, se indica explicitamente el driver para no fallar al importar.
+if uri.startswith("postgresql://") and not uri.startswith("postgresql+"):
+    uri = "postgresql+psycopg2://" + uri[len("postgresql://"):]
 app.config["SQLALCHEMY_DATABASE_URI"] = uri
 if EN_VERCEL:
     # Serverless: cada invocación abre/cierra su conexión (sin pool persistente).
@@ -137,18 +141,57 @@ class Seguimiento(db.Model):
     fecha = db.Column(db.DateTime, nullable=False, default=ahora)
 
 
+def _agregar_columnas_faltantes(conn, tabla):
+    """Agrega a una tabla las columnas que el modelo declara pero la base no tiene.
+
+    create_all() no modifica tablas que ya existen, así que una base creada con
+    una versión anterior del esquema quedaría incompleta y la app fallaría al
+    consultar una columna inexistente.
+    """
+    inspector = inspect(conn)
+    if tabla not in inspector.get_table_names():
+        return
+    existentes = {c["name"] for c in inspector.get_columns(tabla)}
+    for columna in db.metadata.tables[tabla].columns:
+        if columna.name in existentes:
+            continue
+        tipo = columna.type.compile(dialect=conn.dialect)
+        sql = f"ALTER TABLE {tabla} ADD COLUMN {columna.name} {tipo}"
+        if columna.nullable:
+            conn.execute(text(sql))
+            continue
+        # Columna obligatoria: se define con un valor por defecto razonable
+        # para poder agregar la columna a una tabla que ya tiene filas.
+        if isinstance(columna.type, db.Integer):
+            valor = "0"
+        elif isinstance(columna.type, db.DateTime):
+            valor = "CURRENT_TIMESTAMP"
+        else:
+            valor = "''"
+        conn.execute(text(sql + f" NOT NULL DEFAULT {valor}"))
+
+
 def preparar_base():
-    """Crea las tablas y agrega la columna usuario_id si la base es de una versión anterior."""
-    db.create_all()
-    columnas = [c["name"] for c in inspect(db.engine).get_columns("tickets")]
-    if "usuario_id" not in columnas:
-        db.session.execute(text(
-            "ALTER TABLE tickets ADD COLUMN usuario_id INTEGER REFERENCES usuarios(id)"))
-        db.session.commit()
+    """Crea las tablas y completa el esquema si la base es de una versión anterior."""
+    # Importante: todo el DDL se hace sobre una única conexión con commit
+    # explícito. Antes create_all() y el ALTER usaban conexiones distintas, por
+    # lo que en SQLite el esquema se perdía al terminar la petición.
+    with db.engine.begin() as conn:
+        db.metadata.create_all(bind=conn)
+        for tabla in ("tickets", "usuarios", "seguimientos"):
+            _agregar_columnas_faltantes(conn, tabla)
 
 
-with app.app_context():
-    preparar_base()
+try:
+    with app.app_context():
+        preparar_base()
+except Exception as exc:  # pragma: no cover - arranque en la nube
+    # Si la base no abre, se deja un mensaje claro en los logs de Vercel
+    # en vez de un 500 opaco.
+    raise RuntimeError(
+        "No se pudo inicializar la base de datos. Revisa DATABASE_URL "
+        "(formato postgresql://usuario:clave@host:puerto/basedatos) y que la "
+        "base de datos acepte conexiones externas.\nDetalle: %r" % (exc,)) from exc
 
 
 # ------------------------------- Sesión y permisos -------------------------------
