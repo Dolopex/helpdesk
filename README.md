@@ -15,8 +15,14 @@ Sistema de tickets tipo GLPI hecho con **Flask + SQLAlchemy**.
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env            # Windows: Copy-Item .env.example .env
 python app.py                   # http://localhost:5000
 ```
+
+El archivo `.env` guarda la configuración local (está en `.gitignore`, nunca se
+sube al repositorio). Edítalo para cambiar la base de datos, la clave de
+sesión o las credenciales del panel técnico.
+
 Técnico: entra en `/login` con `ADMIN_USER` / `ADMIN_PASSWORD` (por defecto `admin` / `admin123`). Clientes: `/registro`.
 
 ## Variables de entorno

@@ -26,6 +26,14 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    # Carga el archivo .env en desarrollo. En Vercel/Render las variables
+    # vienen del entorno de la plataforma y .env no existe: no es problema.
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+except ImportError:  # pragma: no cover
+    pass
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 ESTADOS = ["En proceso", "Atendido", "Finalizado", "Escalado a dependencia superior"]
